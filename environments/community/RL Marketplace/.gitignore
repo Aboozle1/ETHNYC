@@ -1,0 +1,5 @@
+
+# Wandb logs and metadata (contains API keys)
+wandb/
+**/wandb/
+*.wandb
