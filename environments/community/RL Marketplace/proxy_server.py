@@ -63,8 +63,16 @@ def extract_board_id(prompt):
         print(f"❌ Error extracting Board-ID: {e}")
         return None
 
+DEEP_HERMES_SYSTEM_PROMPT = "You are a puzzle-solving AI. Your task is to find all valid English words of three or more letters in the provided 4x4 grid of letters. Words can be formed from letters connecting horizontally, vertically, or diagonally. Letters can be used more than once in a single word if the path loops. List the words you find as a comma-separated list."
+
+def clean_prompt(prompt: str) -> str:
+    """Remove special tokens from the Atropos prompt."""
+    # This regex removes tokens like <|begin_of_text|>, <|eot_id|>, etc.
+    cleaned_prompt = re.sub(r'<\|.*?\|>', '', prompt)
+    return cleaned_prompt.strip()
+
 def get_solutions_from_nous(prompt):
-    """Call the Nous API to get word hunt solutions."""
+    """Call the Nous API to get word hunt solutions with retry logic."""
     api_key = os.getenv("NOUS_API_KEY")
     if not api_key:
         print("⚠️ NOUS_API_KEY not found. Returning mock data.")
@@ -74,32 +82,45 @@ def get_solutions_from_nous(prompt):
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
+    
+    # Clean the prompt before sending it to the API
+    cleaned_prompt = clean_prompt(prompt)
+    
     data = {
         "model": NOUS_MODEL,
         "messages": [
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": cleaned_prompt}
         ],
         "max_tokens": 150,
         "temperature": 0.5
     }
     
-    try:
-        print(f"Constructed Nous API payload: {data}")
-        response = requests.post(NOUS_API_URL, headers=headers, json=data)
-        response.raise_for_status() # Raise an exception for bad status codes
-        
-        completion = response.json()
-        # Chat endpoint returns content in a message object
-        text_response = completion['choices'][0]['message']['content']
-        
-        # Clean and split the response
-        words = [word.strip() for word in text_response.split(',') if word.strip()]
-        print(f"✅ Got {len(words)} solutions from Nous API: {words}")
-        return words
-        
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error calling Nous API: {e}")
-        return None
+    # Add retry logic to handle intermittent API failures
+    for attempt in range(2): # Try up to 2 times
+        try:
+            print(f"Constructed Nous API payload (Attempt {attempt + 1}): {data}")
+            response = requests.post(NOUS_API_URL, headers=headers, json=data, timeout=30)
+            response.raise_for_status() # Raise an exception for bad status codes
+            
+            completion = response.json()
+            # Chat endpoint returns content in a message object
+            text_response = completion['choices'][0]['message']['content']
+            
+            # Clean and split the response
+            words = [word.strip() for word in text_response.split(',') if word.strip()]
+            print(f"✅ Got {len(words)} solutions from Nous API: {words}")
+            return words # Success, exit the loop
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error calling Nous API on attempt {attempt + 1}: {e}")
+            if attempt < 1:
+                print("Retrying in 1 second...")
+                time.sleep(1)
+            else:
+                print("❌ Max retries reached. API call failed.")
+                return None
+    
+    return None # Should not be reached, but for safety
 
 @app.route('/')
 def health_check():
@@ -140,7 +161,7 @@ def completions():
         # Step 3: Submit the solutions to the smart contract
         transaction_id = flow_client.execute_transaction(
             "cadence/transactions/submit_solutions.cdc",
-            arguments=[board_id, solutions]
+            arguments=[board_id or "unknown-board-id", solutions] # Use a default board_id if None
         )
         
         if transaction_id:
