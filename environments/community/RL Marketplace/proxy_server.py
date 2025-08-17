@@ -2,9 +2,16 @@ from flask import Flask, jsonify, request
 import time
 import uuid
 import re
+import os
+import requests
 from flow_client import flow_client
 
 app = Flask(__name__)
+
+# Constants for Nous API
+NOUS_API_URL = "https://inference-api.nousresearch.com/v1/chat/completions" # Use the chat endpoint
+NOUS_MODEL = "DeepHermes-3-Llama-3-8B-Preview"
+
 
 def extract_board_from_prompt(prompt):
     """Extract the 4x4 board from the Atropos prompt text.
@@ -41,6 +48,59 @@ def extract_board_from_prompt(prompt):
         print(f"❌ Error extracting board: {e}")
         return None
 
+def extract_board_id(prompt):
+    """Extract the Board-ID from the prompt."""
+    try:
+        match = re.search(r"Board-ID: ([\w-]+)", prompt)
+        if match:
+            board_id = match.group(1)
+            print(f"✅ Extracted Board-ID: {board_id}")
+            return board_id
+        else:
+            print("❌ No Board-ID found in prompt")
+            return None
+    except Exception as e:
+        print(f"❌ Error extracting Board-ID: {e}")
+        return None
+
+def get_solutions_from_nous(prompt):
+    """Call the Nous API to get word hunt solutions."""
+    api_key = os.getenv("NOUS_API_KEY")
+    if not api_key:
+        print("⚠️ NOUS_API_KEY not found. Returning mock data.")
+        return ["NOUS", "API", "KEY", "MISSING"]
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": NOUS_MODEL,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 150,
+        "temperature": 0.5
+    }
+    
+    try:
+        print(f"Constructed Nous API payload: {data}")
+        response = requests.post(NOUS_API_URL, headers=headers, json=data)
+        response.raise_for_status() # Raise an exception for bad status codes
+        
+        completion = response.json()
+        # Chat endpoint returns content in a message object
+        text_response = completion['choices'][0]['message']['content']
+        
+        # Clean and split the response
+        words = [word.strip() for word in text_response.split(',') if word.strip()]
+        print(f"✅ Got {len(words)} solutions from Nous API: {words}")
+        return words
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error calling Nous API: {e}")
+        return None
+
 @app.route('/')
 def health_check():
     """A simple health check endpoint to confirm the server is running."""
@@ -67,29 +127,35 @@ def completions():
         print(prompt)
         print("=" * 50)
         
-        # Step 3: Extract board from prompt
-        board = extract_board_from_prompt(prompt)
+        # Step 1: Extract Board-ID from prompt
+        board_id = extract_board_id(prompt)
         
-        if board is None:
-            print("❌ Could not extract board from prompt, using dummy response")
-            dummy_words = "CAT, DOG, BIRD, FISH"
+        # Step 2: Call the Oracle (Nous API) to get solutions
+        solutions = get_solutions_from_nous(prompt)
+        
+        if solutions is None:
+            # Handle API failure
+            solutions = ["API", "CALL", "FAILED"]
+        
+        # Step 3: Submit the solutions to the smart contract
+        transaction_id = flow_client.execute_transaction(
+            "cadence/transactions/submit_solutions.cdc",
+            arguments=[board_id, solutions]
+        )
+        
+        if transaction_id:
+            print(f"✅ Solutions submitted on-chain. Transaction ID: {transaction_id}")
         else:
-            # Step 6: Query smart contract with extracted board
-            solutions = flow_client.get_word_hunt_solutions(board)
+            print("❌ Failed to submit solutions on-chain.")
             
-            if solutions is None or len(solutions) == 0:
-                print("❌ No solutions returned from smart contract, using fallback")
-                dummy_words = "NO, SOLUTIONS, FOUND"
-            else:
-                # Step 7: Format the contract response
-                dummy_words = ", ".join(solutions)
-                print(f"✅ Got {len(solutions)} solutions from smart contract: {dummy_words}")
+        # Format the response using the solutions from the API
+        response_text = ", ".join(solutions)
         
         # Create OpenAI-compatible response structure
         choices = []
         for i in range(n):
             choices.append({
-                "text": dummy_words,
+                "text": response_text,
                 "index": i,
                 "logprobs": None,
                 "finish_reason": "stop"
@@ -103,8 +169,8 @@ def completions():
             "choices": choices,
             "usage": {
                 "prompt_tokens": len(prompt.split()),
-                "completion_tokens": len(dummy_words.split()),
-                "total_tokens": len(prompt.split()) + len(dummy_words.split())
+                "completion_tokens": len(response_text.split()),
+                "total_tokens": len(prompt.split()) + len(response_text.split())
             }
         }
         

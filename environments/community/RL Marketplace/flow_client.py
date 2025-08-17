@@ -5,6 +5,7 @@ import subprocess
 import json
 import os
 from typing import List, Optional
+import re
 
 
 class FlowClient:
@@ -99,6 +100,55 @@ class FlowClient:
             return None
         except Exception as e:
             print(f"❌ Error executing script: {e}")
+            return None
+    
+    def execute_transaction(self, transaction_path: str, arguments: List) -> Optional[str]:
+        """Execute a Cadence transaction on the Flow blockchain."""
+        try:
+            cmd = [
+                "flow", "transactions", "send", transaction_path,
+                "--network", self.network,
+                "--signer", "testnet-account" # Assumes 'testnet-account' is the signer in flow.json
+            ]
+
+            # Add arguments (older CLI syntax)
+            for arg in arguments:
+                if isinstance(arg, str):
+                    cmd.append(f'"{arg}"')
+                elif isinstance(arg, list):
+                    cadence_array = ", ".join([f'"{item}"' for item in arg])
+                    cmd.append(f'[{cadence_array}]')
+                else:
+                    cmd.append(str(arg))
+
+            print(f"Executing Flow transaction: {' '.join(cmd)}")
+
+            result = subprocess.run(
+                cmd,
+                cwd=self.flow_project_dir,
+                capture_output=True,
+                text=True,
+                timeout=120 # Increased timeout for transactions
+            )
+
+            if result.returncode == 0:
+                # Extract Transaction ID from the output
+                match = re.search(r"Transaction ID: (\w+)", result.stdout)
+                if match:
+                    tx_id = match.group(1)
+                    print(f"✅ Transaction submitted successfully: {tx_id}")
+                    return tx_id
+                else:
+                    print("✅ Transaction submitted (could not parse ID)")
+                    return "success"
+            else:
+                print(f"❌ Transaction failed:")
+                print(f"  STDOUT: {result.stdout}")
+                print(f"  STDERR: {result.stderr}")
+                return None
+
+        except Exception as e:
+            print(f"❌ Error executing transaction: {e}")
             return None
     
     def get_word_hunt_solutions(self, board: List[List[str]]) -> Optional[List[str]]:
@@ -246,5 +296,5 @@ class FlowClient:
 # Create a default client instance for the testnet deployment
 flow_client = FlowClient(
     network="testnet",
-    contract_address="0x91aad6c51a5de497"
+    contract_address="0x0409f74530ee4a14"
 )

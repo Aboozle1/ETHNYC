@@ -161,7 +161,8 @@ class WordHuntEnv(BaseEnv):
 
         # Format the board into a prompt
         board = board_data["board"]
-        prompt_text = self._format_board_prompt(board)
+        board_id = board_data["board_id"]
+        prompt_text = self._format_board_prompt(board, board_id)
 
         # Create prompt messages in Atropos standard format (frozenset tuples)
         prompt_messages = [frozenset({"role": "user", "content": prompt_text}.items())]
@@ -169,9 +170,13 @@ class WordHuntEnv(BaseEnv):
         # Return tuple following Atropos standard: (prompt_messages, board_data)
         return (tuple(prompt_messages), board_data)
 
-    def _format_board_prompt(self, board: List[List[str]]) -> str:
+    def _format_board_prompt(self, board: List[List[str]], board_id: str) -> str:
         """Format the board into a prompt for the model."""
         prompt_parts = []
+
+        # Add Board-ID for tracking
+        prompt_parts.append(f"Board-ID: {board_id}")
+        prompt_parts.append("")
 
         # Add instructions if enabled
         if self.config.include_instructions:

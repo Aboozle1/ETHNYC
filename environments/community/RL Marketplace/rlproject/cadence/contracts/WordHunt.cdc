@@ -20,6 +20,7 @@ access(all) contract WordHunt {
     // --- Game State ---
     access(all) let prizeVault: @FlowToken.Vault
     access(all) var entrants: [Address]
+    access(all) var oracleSolutions: {String: [String]} // Board-ID -> Solutions
 
     // --- Training Data Sink State ---
     access(self) let treasury: @FlowToken.Vault
@@ -102,6 +103,16 @@ access(all) contract WordHunt {
         self.prizeVault.deposit(from: <-payment)
     }
 
+    // A function to let the Oracle submit solutions for a given board.
+    access(all) fun submitSolutions(boardId: String, solutions: [String]) {
+        // In a real-world scenario, you would add access control here
+        // to ensure only your trusted Oracle can call this function.
+        // For the hackathon, we'll allow anyone to call it.
+        self.oracleSolutions[boardId] = solutions
+        log("Solutions stored on-chain for Board-ID:")
+        log(boardId)
+    }
+
     // A function to pay out the prize pool to the winner.
     access(all) fun payout(): @FlowToken.Vault {
         // The winner is the first person who entered.
@@ -133,6 +144,7 @@ access(all) contract WordHunt {
         // Initialize game state
         self.prizeVault <- FlowToken.createEmptyVault(vaultType: Type<@FlowToken.Vault>())
         self.entrants = []
+        self.oracleSolutions = {}
 
         // Initialize sink state
         let treasury <- FlowToken.createEmptyVault(vaultType: Type<@FlowToken.Vault>())
