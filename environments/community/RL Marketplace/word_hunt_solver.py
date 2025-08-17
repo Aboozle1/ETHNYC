@@ -84,18 +84,14 @@ class WordHuntSolver:
         if char not in node.children:
             return
 
-        # Move to the next node in the trie
-        node = node.children[char]
-
-        # Update path and visited set
-        path_str += char
         visited.add((r, c))
 
-        # Check if the current path forms a valid word
+        node = node.children[char]
+        path_str += char
+
         if node.is_end_of_word and len(path_str) >= 3:
             found_words.add(path_str)
 
-        # Recurse on all 8 neighbors
         for dr in [-1, 0, 1]:
             for dc in [-1, 0, 1]:
                 if dr == 0 and dc == 0:
@@ -104,7 +100,6 @@ class WordHuntSolver:
                     board, node, r + dr, c + dc, path_str, visited, found_words
                 )
 
-        # Backtrack: remove the current cell from the visited set for other paths
         visited.remove((r, c))
 
     def score_word_hunt_response(
@@ -123,12 +118,17 @@ class WordHuntSolver:
         invalid_words = submitted_words.difference(all_possible_words)
 
         total_score = 0
+        scored_words_list = [] # List to hold (word, score) tuples
         for word in valid_words:
             word_len = len(word)
+            word_score = 0
             if word_len in scoring_system:
-                total_score += scoring_system[word_len]
+                word_score = scoring_system[word_len]
             elif word_len >= 6:  # Official scoring for 6+ letter words
-                total_score += 1400 + (400 * (word_len - 6))
+                word_score = 1400 + (400 * (word_len - 6))
+            
+            total_score += word_score
+            scored_words_list.append((word, word_score))
 
         max_possible_score = 0
         for word in all_possible_words:
@@ -148,6 +148,7 @@ class WordHuntSolver:
             "invalid_words": sorted(list(invalid_words)),
             "num_valid_words": len(valid_words),
             "num_invalid_words": len(invalid_words),
+            "scored_words": sorted(scored_words_list) # Add the new detailed list
         }
 
         return normalized_score, metadata

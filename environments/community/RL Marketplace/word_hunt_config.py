@@ -3,7 +3,7 @@ Custom configuration class for Word Hunt Environment
 Defines all configurable parameters for board generation, scoring, and training
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from pydantic import Field
 
@@ -13,10 +13,17 @@ from atroposlib.envs.base import BaseEnvConfig
 class WordHuntEnvConfig(BaseEnvConfig):
     """Configuration for Word Hunt Environment"""
 
+    html_template_path: Optional[str] = Field(
+        default=None, description="Path to a custom HTML template for rendering reports."
+    )
+
     # Board Generation Parameters
     board_size: int = Field(default=4, description="Size of the word hunt board (4x4)")
     min_word_length: int = Field(default=3, description="Minimum word length to count")
     max_word_length: int = Field(default=16, description="Maximum word length possible")
+    board_generation_seed: Optional[int] = Field(
+        default=36, description="Seed for random board generation. Set to None for random seed."
+    )
 
     # Letter Distribution Parameters
     vowel_weight: float = Field(

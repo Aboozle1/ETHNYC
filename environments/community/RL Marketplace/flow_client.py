@@ -108,18 +108,22 @@ class FlowClient:
             cmd = [
                 "flow", "transactions", "send", transaction_path,
                 "--network", self.network,
-                "--signer", "testnet-account" # Assumes 'testnet-account' is the signer in flow.json
+                "--signer", "testnet-account"
             ]
 
-            # Add arguments (older CLI syntax)
-            for arg in arguments:
-                if isinstance(arg, str):
-                    cmd.append(f'"{arg}"')
-                elif isinstance(arg, list):
-                    cadence_array = ", ".join([f'"{item}"' for item in arg])
-                    cmd.append(f'[{cadence_array}]')
-                else:
-                    cmd.append(str(arg))
+            # --- NEW: Modern --args-json syntax ---
+            if arguments:
+                board_id = arguments[0]
+                solutions = arguments[1] if len(arguments) > 1 and isinstance(arguments[1], list) else []
+
+                # Build the JSON structure for the arguments
+                args_json = json.dumps([
+                    {"type": "String", "value": board_id},
+                    {"type": "Array", "value": [{"type": "String", "value": s} for s in solutions]}
+                ])
+
+                cmd.extend(["--args-json", args_json])
+            # --- END NEW ---
 
             print(f"Executing Flow transaction: {' '.join(cmd)}")
 

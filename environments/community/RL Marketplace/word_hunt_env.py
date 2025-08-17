@@ -104,7 +104,7 @@ class WordHuntEnv(BaseEnv):
         self.current_item = None  # Store current item for scoring
 
         # 4. Set up random state for reproducible board generation
-        random.seed(42)  # Fixed seed for reproducibility
+        random.seed(self.config.board_generation_seed)
 
         # 5. Generate initial batch of boards for this epoch
         await self._generate_epoch_boards()
@@ -360,18 +360,27 @@ class WordHuntEnv(BaseEnv):
             base_messages = [dict(role_dict) for role_dict in prompt_messages]
             to_score = []
 
-            for completion_choice in completions.choices:
+            for i, completion_choice in enumerate(completions.choices):
                 # Validate completion
                 if not completion_choice or not completion_choice.text:
                     print("⚠️  Skipping invalid completion choice")
                     continue
+                
+                # --- NEW: Extract metadata for EACH completion ---
+                transaction_id = "N/A"
+                if hasattr(completion_choice, "_raw") and completion_choice._raw:
+                    transaction_id = completion_choice._raw.get("transaction_id", "N/A")
+                
+                metadata_from_proxy = {"transaction_id": transaction_id}
+                # --- END NEW ---
 
                 # Create trajectory efficiently
                 trajectory_messages = base_messages + [
                     {"role": "assistant", "content": completion_choice.text.strip()}
                 ]
 
-                to_score.append((tuple(trajectory_messages), board_data))
+                # Pass the metadata along with the data to be scored
+                to_score.append((tuple(trajectory_messages), board_data, metadata_from_proxy))
 
             if not to_score:
                 print("❌ No valid trajectories created")
@@ -411,7 +420,7 @@ class WordHuntEnv(BaseEnv):
 
     async def score(
         self, rollout_group_data: List
-    ) -> Optional[WordHuntScoredDataGroup]:
+    ) -> Optional[ScoredDataGroup]:
         """Score the collected trajectories (following Atropos standard pattern).
 
         Args:
@@ -426,13 +435,14 @@ class WordHuntEnv(BaseEnv):
         board = self.current_item["board"]
 
         # Initialize our custom data group with empty lists for each key.
-        scores = WordHuntScoredDataGroup()
+        scores = ScoredDataGroup()
         scores["tokens"] = []
         scores["masks"] = []
         scores["scores"] = []
+        scores["metadata"] = [] # Use the standard metadata field
 
         for trajectory_tuple in rollout_group_data:
-            trajectory_messages, board_data = trajectory_tuple
+            trajectory_messages, board_data, metadata_from_proxy = trajectory_tuple
 
             if not trajectory_messages or not isinstance(trajectory_messages, tuple):
                 continue
@@ -452,18 +462,36 @@ class WordHuntEnv(BaseEnv):
             if not assistant_messages:
                 continue
 
-            response = assistant_messages[-1]["content"]
+            response_full = assistant_messages[-1]["content"]
+
+            # --- NEW: Parse TX_ID from the response string ---
+            transaction_id = "N/A"
+            if "|||TX_ID|||" in response_full:
+                parts = response_full.split("|||TX_ID|||")
+                response = parts[0]
+                transaction_id = parts[1]
+            else:
+                response = response_full
+            # --- END NEW ---
 
             # Score the response using our solver
-            normalized_score, metadata = self.solver.score_word_hunt_response(
+            normalized_score, score_metadata = self.solver.score_word_hunt_response(
                 response, board, self.scoring_system
             )
 
+            # Combine all metadata into one dictionary for the report
+            final_metadata = {
+                "transaction_id": transaction_id,
+                "raw_llm_response": response,
+                "scored_words": score_metadata.get("scored_words", []),
+                **score_metadata  # Include other solver stats like valid/invalid counts
+            }
+
             # Update training statistics
             self.total_games += 1
-            self.total_score += metadata["total_score"]
-            self.total_valid_words += metadata["num_valid_words"]
-            self.total_invalid_words += metadata["num_invalid_words"]
+            self.total_score += score_metadata["total_score"]
+            self.total_valid_words += score_metadata["num_valid_words"]
+            self.total_invalid_words += score_metadata["num_invalid_words"]
 
             # Tokenize the response (following Atropos standard)
             tokenized = tokenize_for_trainer(self.tokenizer, trajectory_dicts)
@@ -473,6 +501,7 @@ class WordHuntEnv(BaseEnv):
             scores["tokens"].append(tokens)
             scores["masks"].append(masks)
             scores["scores"].append(normalized_score)
+            scores["metadata"].append(final_metadata)  # Append the combined metadata
 
         return scores if scores["tokens"] else None
 

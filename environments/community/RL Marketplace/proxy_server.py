@@ -99,7 +99,7 @@ def get_solutions_from_nous(prompt):
     for attempt in range(2): # Try up to 2 times
         try:
             print(f"Constructed Nous API payload (Attempt {attempt + 1}): {data}")
-            response = requests.post(NOUS_API_URL, headers=headers, json=data, timeout=30)
+            response = requests.post(NOUS_API_URL, headers=headers, json=data, timeout=120)
             response.raise_for_status() # Raise an exception for bad status codes
             
             completion = response.json()
@@ -169,8 +169,11 @@ def completions():
         else:
             print("❌ Failed to submit solutions on-chain.")
             
-        # Format the response using the solutions from the API
+        # --- NEW: Embed TX_ID in the response text ---
         response_text = ", ".join(solutions)
+        if transaction_id:
+            response_text += f"|||TX_ID|||{transaction_id}"
+        # --- END NEW ---
         
         # Create OpenAI-compatible response structure
         choices = []
@@ -192,7 +195,8 @@ def completions():
                 "prompt_tokens": len(prompt.split()),
                 "completion_tokens": len(response_text.split()),
                 "total_tokens": len(prompt.split()) + len(response_text.split())
-            }
+            },
+            "transaction_id": transaction_id # Custom field to pass back to Atropos
         }
         
         print(f"✅ Returning response with {len(choices)} choices")

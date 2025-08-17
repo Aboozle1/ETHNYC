@@ -46,6 +46,7 @@ def create_html_for_group(group_data, index):
     """Generates HTML snippet for a single group."""
     messages = group_data.get("messages", [])
     scores = group_data.get("scores", [])
+    metadata_list = group_data.get("metadata", []) # Get our new metadata list
 
     if len(messages) != len(scores):
         print(
@@ -65,17 +66,55 @@ def create_html_for_group(group_data, index):
         )
         score_class = get_score_class(score)
         item_id = f"group-{index}-item-{i}"
-        items_html += textwrap.dedent(
-            f"""\
-            <div class="item {score_class}" id="{item_id}">
-                <h4>Content {i}</h4>
-                <div class="content-block">
-                    {rendered_markdown}
-                </div>
-                <p><strong>Reward:</strong> {html.escape(str(score))}</p>
+
+        # --- NEW: Build the metadata HTML block ---
+        metadata_html = ""
+        on_chain_badge_html = "" # Badge for on-chain proof
+        if i < len(metadata_list) and metadata_list[i]:
+            metadata = metadata_list[i]
+            tx_id = metadata.get("transaction_id", "N/A")
+            scored_words = metadata.get("scored_words", [])
+
+            # --- NEW: Check for valid TX and create badge ---
+            if tx_id != "N/A" and len(tx_id) == 64:
+                try:
+                    int(tx_id, 16) # Validate it's a hex string
+                    on_chain_badge_html = '<span class="on-chain-badge">✅ On-Chain</span>'
+                except ValueError:
+                    pass # Not a valid hex string
+            # --- END NEW ---
+            
+            # Create a clickable link for the transaction ID
+            tx_link = f'<a href="https://testnet.flowscan.org/transaction/{tx_id}" target="_blank">{tx_id}</a>'
+            
+            # Format the scored words into an HTML list
+            words_html = ""
+            if scored_words:
+                words_html += '<ul class="word-list">'
+                for word, word_score in scored_words:
+                    words_html += f'<li>{html.escape(word)} <span>({word_score} pts)</span></li>'
+                words_html += '</ul>'
+            
+            metadata_html = f"""
+            <div class="metadata-block">
+                <h4>Metadata</h4>
+                <p><strong>Transaction ID:</strong> {tx_link}</p>
+                <p><strong>Scored Words:</strong></p>
+                {words_html}
             </div>
-        """
-        )
+            """
+        # --- END NEW ---
+
+        # Build the final item HTML safely
+        item_html_parts = [
+            f'<div class="item {score_class}" id="{item_id}">',
+            f'    <div class="item-header"><h4>Content {i}</h4>{on_chain_badge_html}</div>',
+            f'    <div class="content-block">{rendered_markdown}</div>',
+            f'    <p><strong>Reward:</strong> {html.escape(str(score))}</p>',
+            metadata_html,
+            '</div>'
+        ]
+        items_html += "\n".join(item_html_parts)
 
     if not items_html:
         # Handle case where after length correction, there are no items
