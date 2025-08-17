@@ -2,3 +2,6 @@
 emulator-account.pkey
 imports
 .env
+
+# Local private keys
+*.pkey

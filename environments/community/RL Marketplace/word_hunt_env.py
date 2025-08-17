@@ -34,7 +34,17 @@ class WordHuntEnv(BaseEnv):
     def config_init(cls) -> Tuple[WordHuntEnvConfig, List[APIServerConfig]]:
         """Initializes the default configuration for the environment."""
         env_config = WordHuntEnvConfig()
-        server_configs = [APIServerConfig()]
+        
+        # Configure server to use our proxy instead of OpenAI
+        server_configs = [APIServerConfig(
+            base_url="http://localhost:8080/v1",  # Our proxy server endpoint
+            api_key="hackathon-demo",  # Dummy API key for our proxy
+            model_name="word-hunt-smart-contract",  # Model name our proxy returns
+            timeout=120,  # Reasonable timeout for smart contract calls
+            num_max_requests_at_once=4,  # Limit concurrent requests
+            num_requests_for_eval=2,
+        )]
+        
         return env_config, server_configs
 
     async def setup(self) -> None:

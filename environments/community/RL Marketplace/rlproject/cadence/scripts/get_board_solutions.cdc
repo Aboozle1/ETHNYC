@@ -11,19 +11,12 @@ access(all) fun main(board: [String]): [String] {
         return []
     }
     
-    // Mock solutions - in a real implementation, this would:
-    // 1. Call WordHunt contract's word-finding algorithm
-    // 2. Return actual valid words found on the board
-    
-    // For now, return some demo words that might exist on any board
-    let mockSolutions: [String] = [
-        "CAT",
-        "DOG", 
-        "BAT",
-        "HAT",
-        "RAT",
-        "SAT"
+    // Dynamically create a response to prove end-to-end data flow
+    let dynamicResponse: [String] = [
+        "SUCCESS",
+        board[0],
+        board[15]
     ]
     
-    return mockSolutions
+    return dynamicResponse
 }
